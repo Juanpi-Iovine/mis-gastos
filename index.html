@@ -325,10 +325,12 @@ function GastosApp() {
 
   return (
    return (
-  <div style={{ display: "flex", justifyContent: "center", background: "#000000", height: "100dvh", overflow: "hidden", fontFamily: FONT }}>
-    <div style={{ width: "100%", maxWidth: 430, background: BG, height: "100dvh", position: "relative", display: "flex", flexDirection: "column" }}>
+  return (
+  <div style={{ display: "flex", justifyContent: "center", background: "#000000", minHeight: "100vh", fontFamily: FONT }}>
+    <div style={{ width: "100%", maxWidth: 430, background: BG, minHeight: "100vh", position: "relative" }}>
       
-      {/* Contenedor scrolleable independiente */}
+      {/* Aquí está el fix de padding para la Dynamic Island y el Notch de iOS */}
+      <div style={{ paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
       <div style={{ flex: 1, overflowY: "auto", paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
           {tab === "inicio" && (
             <InicioScreen bank={data.bank} totalCardDebt={totalCardDebt} monthTotals={monthTotals} monthByCategory={monthByCategory} recentTx={recentTx} catById={catById} cards={data.cards} onSeeAll={() => setTab("movimientos")} onEditBank={() => setEditBankOpen(true)} monthLabel={MONTHS[now.getMonth()]} />
