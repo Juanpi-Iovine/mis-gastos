@@ -6,11 +6,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="mobile-web-app-capable" content="yes" />
-<title>Mis Gastos</title>
+<meta name="theme-color" content="#000000" />
+<meta name="color-scheme" content="dark" />
 <meta name="apple-mobile-web-app-title" content="Gastos" />
 <link rel="apple-touch-icon" href="./icono.png" />
+<title>Mis Gastos</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #DEDFDA; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #000000; -webkit-tap-highlight-color: transparent; }
   * { box-sizing: border-box; }
   input, select { font-size: 16px; } /* avoid iOS zoom on focus */
   @keyframes slideUp { from { transform: translateY(24px); opacity: 0.6 } to { transform: translateY(0); opacity: 1 } }
@@ -23,40 +25,39 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.23.8/babel.min.js" crossorigin></script>
 
-<!-- CORRECCIÓN AQUÍ: Se agregó data-type="module" a la etiqueta -->
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo } = React;
 
-/* ---------------------------------- design tokens ---------------------------------- */
-const INK = "#16241F";
-const MUTED = "#6E7B76";
-const BG = "#F4F5F1";
-const CARD = "#FFFFFF";
-const LINE = "#E7E9E3";
-const BRAND = "#1F5D50";
-const BRAND_SOFT = "#E4EFEC";
-const INCOME = "#2E9E75";
-const EXPENSE = "#C4522E";
+/* ---------------------------------- design tokens (Dark Mode) ---------------------------------- */
+const INK = "#F1F5F9";        
+const MUTED = "#94A3B8";      
+const BG = "#000000";         
+const CARD = "#111827";       
+const LINE = "#334155";       
+const BRAND = "#3B82F6";      
+const BRAND_SOFT = "#1E3A8A"; 
+const INCOME = "#10B981";     
+const EXPENSE = "#EF4444";    
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif";
 
 const DEFAULT_CATEGORIES = [
   { id: "cat_super", name: "Supermercado", emoji: "🛒", color: "#3E8E7E" },
-  { id: "cat_comida", name: "Comida afuera", emoji: "🍔", color: "#C4522E" },
-  { id: "cat_transporte", name: "Transporte", emoji: "🚗", color: "#4C6EF5" },
+  { id: "cat_comida", name: "Comida afuera", emoji: "🍔", color: "#EF4444" },
+  { id: "cat_transporte", name: "Transporte", emoji: "🚗", color: "#3B82F6" },
   { id: "cat_hogar", name: "Hogar", emoji: "🏠", color: "#A9784F" },
   { id: "cat_salud", name: "Salud", emoji: "💊", color: "#D6336C" },
   { id: "cat_ocio", name: "Ocio", emoji: "🎬", color: "#7048E8" },
   { id: "cat_ropa", name: "Ropa", emoji: "👕", color: "#E8890C" },
-  { id: "cat_educacion", name: "Educación", emoji: "📚", color: "#1F5D50" },
+  { id: "cat_educacion", name: "Educación", emoji: "📚", color: "#10B981" },
   { id: "cat_servicios", name: "Servicios", emoji: "💡", color: "#C9A227" },
   { id: "cat_viajes", name: "Viajes", emoji: "✈️", color: "#1E90A8" },
-  { id: "cat_otros", name: "Otros", emoji: "📦", color: "#868E96" },
-  { id: "cat_ingreso", name: "Ingreso", emoji: "💰", color: "#2E9E75" },
+  { id: "cat_otros", name: "Otros", emoji: "📦", color: "#94A3B8" },
+  { id: "cat_ingreso", name: "Ingreso", emoji: "💰", color: "#10B981" },
 ];
 
 const EMOJI_CHOICES = ["🛒","🍔","🚗","🏠","💊","🎬","👕","📚","💡","✈️","📦","💰","🐶","🎓","🎁","⚽","🍺","📱","🔧","💻"];
-const COLOR_CHOICES = ["#3E8E7E","#C4522E","#4C6EF5","#A9784F","#D6336C","#7048E8","#E8890C","#1F5D50","#C9A227","#1E90A8","#868E96","#2E9E75"];
+const COLOR_CHOICES = ["#3E8E7E","#EF4444","#3B82F6","#A9784F","#D6336C","#7048E8","#E8890C","#10B981","#C9A227","#1E90A8","#94A3B8","#10B981"];
 
 const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -125,7 +126,7 @@ function persist(data) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
-/* ---------------------------------- icons (inline svg, no dependencies) ---------------------------------- */
+/* ---------------------------------- icons (inline svg) ---------------------------------- */
 function Icon({ name, size = 20, color = INK, strokeWidth = 1.8 }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round" };
   const map = {
@@ -153,7 +154,7 @@ function Sheet({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(22,36,31,0.4)" }} />
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)" }} />
       <div style={{ position: "relative", width: "100%", maxWidth: 430, background: BG, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "88vh", overflowY: "auto", paddingBottom: "env(safe-area-inset-bottom)", animation: "slideUp 0.25s ease-out" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 8px" }}>
           <span style={{ fontSize: 17, fontWeight: 600, color: INK }}>{title}</span>
@@ -185,7 +186,7 @@ function Segmented({ options, value, onChange }) {
   return (
     <div style={{ display: "flex", background: LINE, borderRadius: 12, padding: 3 }}>
       {options.map((o) => (
-        <button key={o.value} onClick={() => onChange(o.value)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: value === o.value ? CARD : "transparent", fontWeight: 600, fontSize: 14, color: value === o.value ? INK : MUTED, boxShadow: value === o.value ? "0 1px 2px rgba(0,0,0,0.08)" : "none", fontFamily: FONT }}>
+        <button key={o.value} onClick={() => onChange(o.value)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: value === o.value ? CARD : "transparent", fontWeight: 600, fontSize: 14, color: value === o.value ? INK : MUTED, boxShadow: value === o.value ? "0 1px 2px rgba(0,0,0,0.2)" : "none", fontFamily: FONT }}>
           {o.label}
         </button>
       ))}
@@ -281,6 +282,7 @@ function GastosApp() {
     const todayM = new Date(now.getFullYear(), now.getMonth(), 1);
     return round2(data.transactions.filter((t) => t.accountType === "card" && t.cardId === cardId).filter((t) => new Date(t.date + "T00:00:00") >= todayM).reduce((s, t) => s + t.amount, 0));
   }
+  
   function cardCurrentMonthDebt(cardId) {
     return round2(data.transactions
       .filter((t) => t.accountType === "card" && t.cardId === cardId)
@@ -290,6 +292,7 @@ function GastosApp() {
       })
       .reduce((s, t) => s + t.amount, 0));
   }
+
   const totalCardDebt = round2(data.cards.reduce((s, c) => s + cardPendingDebt(c.id), 0));
 
   function saveTransaction(tx) {
@@ -321,22 +324,27 @@ function GastosApp() {
   const recentTx = useMemo(() => [...data.transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6), [data.transactions]);
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", background: "#DEDFDA", minHeight: "100vh", fontFamily: FONT }}>
-      <div style={{ width: "100%", maxWidth: 430, background: BG, minHeight: "100vh", position: "relative", boxShadow: "0 0 40px rgba(0,0,0,0.12)" }}>
-       <div style={{ paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
+    <div style={{ display: "flex", justifyContent: "center", background: "#000000", minHeight: "100vh", fontFamily: FONT }}>
+      <div style={{ width: "100%", maxWidth: 430, background: BG, minHeight: "100vh", position: "relative" }}>
+        
+        {/* Aquí está el fix de padding para la Dynamic Island y el Notch de iOS */}
+        <div style={{ paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
           {tab === "inicio" && (
             <InicioScreen bank={data.bank} totalCardDebt={totalCardDebt} monthTotals={monthTotals} monthByCategory={monthByCategory} recentTx={recentTx} catById={catById} cards={data.cards} onSeeAll={() => setTab("movimientos")} onEditBank={() => setEditBankOpen(true)} monthLabel={MONTHS[now.getMonth()]} />
           )}
           {tab === "movimientos" && (<MovimientosScreen transactions={data.transactions} catById={catById} onDelete={deleteTransaction} />)}
-          {tab === "tarjetas" && (<TarjetasScreen cards={data.cards} cardPendingDebt={cardPendingDebt} onAdd={() => setAddCardOpen(true)} onOpen={(c) => setCardDetail(c)} />)}
+          
+          {/* Aquí pasamos ambas funciones de cálculo de deuda */}
+          {tab === "tarjetas" && (<TarjetasScreen cards={data.cards} cardPendingDebt={cardPendingDebt} cardCurrentMonthDebt={cardCurrentMonthDebt} onAdd={() => setAddCardOpen(true)} onOpen={(c) => setCardDetail(c)} />)}
+          
           {tab === "resumenes" && (
             <ResumenesScreen mode={summaryMode} setMode={setSummaryMode} selMonth={selMonth} setSelMonth={setSelMonth} selYear={selYear} setSelYear={setSelYear} monthTotals={monthTotals} monthByCategory={monthByCategory} yearTotals={yearTotals} yearByCategory={yearByCategory} yearByMonth={yearByMonth} />
           )}
-          {tab === "tarjetas" && (<TarjetasScreen cards={data.cards} cardPendingDebt={cardPendingDebt} cardCurrentMonthDebt={cardCurrentMonthDebt} onAdd={() => setAddCardOpen(true)} onOpen={(c) => setCardDetail(c)} />)}
+          {tab === "ajustes" && (<AjustesScreen bank={data.bank} onEditBank={() => setEditBankOpen(true)} categories={categories} onAddCategory={() => setAddCatOpen(true)} onDeleteCategory={deleteCategory} />)}
         </div>
 
         {(tab === "inicio" || tab === "movimientos") && (
-          <button onClick={() => setAddTxOpen(true)} style={{ position: "absolute", right: 20, bottom: 96, width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(31,93,80,0.35)" }}>
+          <button onClick={() => setAddTxOpen(true)} style={{ position: "absolute", right: 20, bottom: 96, width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(59,130,246,0.4)" }}>
             <Icon name="plus" size={26} color="#fff" />
           </button>
         )}
@@ -363,7 +371,7 @@ function TabBar({ tab, setTab }) {
     { id: "ajustes", label: "Ajustes", icon: "settings" },
   ];
   return (
-    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(244,245,241,0.94)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)" }}>
       {items.map((it) => {
         const active = tab === it.id;
         return (
@@ -501,7 +509,7 @@ function MovimientosScreen({ transactions, catById, onDelete }) {
   );
 }
 
-/* ---------------------------------- Tarjetas ---------------------------------- */
+/* ---------------------------------- Tarjetas (Actualizada) ---------------------------------- */
 function TarjetasScreen({ cards, cardPendingDebt, cardCurrentMonthDebt, onAdd, onOpen }) {
   return (
     <div style={{ padding: "20px 20px 8px" }}>
@@ -517,7 +525,7 @@ function TarjetasScreen({ cards, cardPendingDebt, cardCurrentMonthDebt, onAdd, o
             const totalDebt = cardPendingDebt(c.id);
             const monthDebt = cardCurrentMonthDebt(c.id);
             return (
-              <div key={c.id} onClick={() => onOpen(c)} style={{ background: "linear-gradient(135deg, #1E3A8A, #0F172A)", borderRadius: 20, padding: 18, color: "#fff", cursor: "pointer" }}>
+              <div key={c.id} onClick={() => onOpen(c)} style={{ background: "linear-gradient(135deg, #1E3A8A, #0F172A)", borderRadius: 20, padding: 18, color: "#fff", cursor: "pointer", border: "1px solid #1E3A8A" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <div style={{ fontSize: 15.5, fontWeight: 600 }}>{c.name}</div>
@@ -547,6 +555,7 @@ function TarjetasScreen({ cards, cardPendingDebt, cardCurrentMonthDebt, onAdd, o
     </div>
   );
 }
+
 function CardDetailSheet({ card, onClose, transactions, catById, onDelete, onDeleteCard }) {
   if (!card) return null;
   const related = transactions.filter((t) => t.cardId === card.id).sort((a, b) => (a.date < b.date ? 1 : -1));
