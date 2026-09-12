@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="./icono.png" />
 <title>Mis Gastos</title>
 <style>
-  /* Aquí bloqueamos el tamaño al 100% de la pantalla para evitar que se mueva la barra */
+  /* Bloqueamos el tamaño al 100% de la pantalla para evitar que la barra salte */
   html, body { 
     margin: 0; 
     padding: 0; 
@@ -348,9 +348,9 @@ function GastosApp() {
           {tab === "ajustes" && (<AjustesScreen bank={data.bank} onEditBank={() => setEditBankOpen(true)} categories={categories} onAddCategory={() => setAddCatOpen(true)} onDeleteCategory={deleteCategory} />)}
         </div>
 
-        {/* Botón Flotante y Barra fija */}
+        {/* Botón Flotante y Barra fija con position: fixed para asegurar que queden anclados */}
         {(tab === "inicio" || tab === "movimientos") && (
-          <button onClick={() => setAddTxOpen(true)} style={{ position: "absolute", right: 20, bottom: 96, width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(59,130,246,0.4)", zIndex: 10 }}>
+          <button onClick={() => setAddTxOpen(true)} style={{ position: "fixed", right: 20, bottom: "calc(76px + env(safe-area-inset-bottom))", width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(59,130,246,0.4)", zIndex: 10 }}>
             <Icon name="plus" size={26} color="#fff" />
           </button>
         )}
@@ -367,7 +367,7 @@ function GastosApp() {
   );
 }
 
-/* ---------------------------------- tab bar ---------------------------------- */
+/* ---------------------------------- tab bar (Actualizado con fixed) ---------------------------------- */
 function TabBar({ tab, setTab }) {
   const items = [
     { id: "inicio", label: "Inicio", icon: "home" },
@@ -377,7 +377,7 @@ function TabBar({ tab, setTab }) {
     { id: "ajustes", label: "Ajustes", icon: "settings" },
   ];
   return (
-    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 10 }}>
+    <div style={{ position: "fixed", bottom: 0, width: "100%", maxWidth: 430, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 10 }}>
       {items.map((it) => {
         const active = tab === it.id;
         return (
