@@ -281,6 +281,15 @@ function GastosApp() {
     const todayM = new Date(now.getFullYear(), now.getMonth(), 1);
     return round2(data.transactions.filter((t) => t.accountType === "card" && t.cardId === cardId).filter((t) => new Date(t.date + "T00:00:00") >= todayM).reduce((s, t) => s + t.amount, 0));
   }
+  function cardCurrentMonthDebt(cardId) {
+    return round2(data.transactions
+      .filter((t) => t.accountType === "card" && t.cardId === cardId)
+      .filter((t) => {
+        const d = new Date(t.date + "T00:00:00");
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      })
+      .reduce((s, t) => s + t.amount, 0));
+  }
   const totalCardDebt = round2(data.cards.reduce((s, c) => s + cardPendingDebt(c.id), 0));
 
   function saveTransaction(tx) {
@@ -323,7 +332,7 @@ function GastosApp() {
           {tab === "resumenes" && (
             <ResumenesScreen mode={summaryMode} setMode={setSummaryMode} selMonth={selMonth} setSelMonth={setSelMonth} selYear={selYear} setSelYear={setSelYear} monthTotals={monthTotals} monthByCategory={monthByCategory} yearTotals={yearTotals} yearByCategory={yearByCategory} yearByMonth={yearByMonth} />
           )}
-          {tab === "ajustes" && (<AjustesScreen bank={data.bank} onEditBank={() => setEditBankOpen(true)} categories={categories} onAddCategory={() => setAddCatOpen(true)} onDeleteCategory={deleteCategory} />)}
+          {tab === "tarjetas" && (<TarjetasScreen cards={data.cards} cardPendingDebt={cardPendingDebt} cardCurrentMonthDebt={cardCurrentMonthDebt} onAdd={() => setAddCardOpen(true)} onOpen={(c) => setCardDetail(c)} />)}
         </div>
 
         {(tab === "inicio" || tab === "movimientos") && (
@@ -493,7 +502,7 @@ function MovimientosScreen({ transactions, catById, onDelete }) {
 }
 
 /* ---------------------------------- Tarjetas ---------------------------------- */
-function TarjetasScreen({ cards, cardPendingDebt, onAdd, onOpen }) {
+function TarjetasScreen({ cards, cardPendingDebt, cardCurrentMonthDebt, onAdd, onOpen }) {
   return (
     <div style={{ padding: "20px 20px 8px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -505,9 +514,10 @@ function TarjetasScreen({ cards, cardPendingDebt, onAdd, onOpen }) {
           {cards.map((c) => {
             const nextClosing = nextDayOccurrence(c.closingDay, new Date());
             const nextDue = nextDayOccurrence(c.dueDay, new Date());
-            const debt = cardPendingDebt(c.id);
+            const totalDebt = cardPendingDebt(c.id);
+            const monthDebt = cardCurrentMonthDebt(c.id);
             return (
-              <div key={c.id} onClick={() => onOpen(c)} style={{ background: "linear-gradient(135deg, #22403A, #16241F)", borderRadius: 20, padding: 18, color: "#fff", cursor: "pointer" }}>
+              <div key={c.id} onClick={() => onOpen(c)} style={{ background: "linear-gradient(135deg, #1E3A8A, #0F172A)", borderRadius: 20, padding: 18, color: "#fff", cursor: "pointer" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <div style={{ fontSize: 15.5, fontWeight: 600 }}>{c.name}</div>
@@ -515,8 +525,20 @@ function TarjetasScreen({ cards, cardPendingDebt, onAdd, onOpen }) {
                   </div>
                   <Icon name="wallet" size={20} color="rgba(255,255,255,0.7)" />
                 </div>
-                <div style={{ marginTop: 18, fontSize: 22, fontWeight: 700 }}>{fmtMoney(debt)}</div>
-                <div style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2 }}>Próximo cierre {nextClosing.getDate()} {MONTHS_SHORT[nextClosing.getMonth()]} · Próximo vencimiento {nextDue.getDate()} {MONTHS_SHORT[nextDue.getMonth()]}</div>
+                
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 2 }}>A pagar este mes</div>
+                  <div style={{ fontSize: 28, fontWeight: 700 }}>{fmtMoney(monthDebt)}</div>
+                </div>
+                
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 12.5, opacity: 0.8 }}>Deuda total pendiente</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtMoney(totalDebt)}</div>
+                </div>
+                
+                <div style={{ fontSize: 11.5, opacity: 0.6, marginTop: 12 }}>
+                  Próximo cierre {nextClosing.getDate()} {MONTHS_SHORT[nextClosing.getMonth()]} · Vencimiento {nextDue.getDate()} {MONTHS_SHORT[nextDue.getMonth()]}
+                </div>
               </div>
             );
           })}
@@ -525,7 +547,6 @@ function TarjetasScreen({ cards, cardPendingDebt, onAdd, onOpen }) {
     </div>
   );
 }
-
 function CardDetailSheet({ card, onClose, transactions, catById, onDelete, onDeleteCard }) {
   if (!card) return null;
   const related = transactions.filter((t) => t.cardId === card.id).sort((a, b) => (a.date < b.date ? 1 : -1));
