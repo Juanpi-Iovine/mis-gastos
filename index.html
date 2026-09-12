@@ -12,14 +12,22 @@
 <link rel="apple-touch-icon" href="./icono.png" />
 <title>Mis Gastos</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #000000; -webkit-tap-highlight-color: transparent; }
+  /* Aquí bloqueamos el tamaño al 100% de la pantalla para evitar que se mueva la barra */
+  html, body { 
+    margin: 0; 
+    padding: 0; 
+    background: #000000; 
+    -webkit-tap-highlight-color: transparent; 
+    height: 100%; 
+    overflow: hidden; 
+  }
   * { box-sizing: border-box; }
-  input, select { font-size: 16px; } /* avoid iOS zoom on focus */
+  input, select { font-size: 16px; } 
   @keyframes slideUp { from { transform: translateY(24px); opacity: 0.6 } to { transform: translateY(0); opacity: 1 } }
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root" style="height: 100%;"></div>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -110,7 +118,7 @@ function nextDayOccurrence(day, from) {
   return d;
 }
 
-/* ---------------------------------- storage (localStorage) ---------------------------------- */
+/* ---------------------------------- storage ---------------------------------- */
 const STORAGE_KEY = "gastos-app-data-v1";
 function emptyData() {
   return { bank: { name: "Cuenta bancaria", balance: 0 }, cards: [], categories: DEFAULT_CATEGORIES, transactions: [] };
@@ -126,7 +134,7 @@ function persist(data) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
-/* ---------------------------------- icons (inline svg) ---------------------------------- */
+/* ---------------------------------- icons ---------------------------------- */
 function Icon({ name, size = 20, color = INK, strokeWidth = 1.8 }) {
   const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round" };
   const map = {
@@ -149,7 +157,7 @@ function Icon({ name, size = 20, color = INK, strokeWidth = 1.8 }) {
   return map[name] || null;
 }
 
-/* ---------------------------------- small UI atoms ---------------------------------- */
+/* ---------------------------------- UI atoms ---------------------------------- */
 function Sheet({ open, onClose, title, children }) {
   if (!open) return null;
   return (
@@ -324,30 +332,25 @@ function GastosApp() {
   const recentTx = useMemo(() => [...data.transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6), [data.transactions]);
 
   return (
-   return (
-  return (
-  <div style={{ display: "flex", justifyContent: "center", background: "#000000", minHeight: "100vh", fontFamily: FONT }}>
-    <div style={{ width: "100%", maxWidth: 430, background: BG, minHeight: "100vh", position: "relative" }}>
-      
-      {/* Aquí está el fix de padding para la Dynamic Island y el Notch de iOS */}
-      <div style={{ paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
-      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
+    <div style={{ display: "flex", justifyContent: "center", background: "#000000", height: "100%", fontFamily: FONT }}>
+      <div style={{ width: "100%", maxWidth: 430, background: BG, height: "100%", position: "relative", display: "flex", flexDirection: "column" }}>
+        
+        {/* Contenedor scrolleable que se desliza por debajo de la barra */}
+        <div style={{ flex: 1, overflowY: "auto", paddingBottom: 110, paddingTop: "env(safe-area-inset-top)" }}>
           {tab === "inicio" && (
             <InicioScreen bank={data.bank} totalCardDebt={totalCardDebt} monthTotals={monthTotals} monthByCategory={monthByCategory} recentTx={recentTx} catById={catById} cards={data.cards} onSeeAll={() => setTab("movimientos")} onEditBank={() => setEditBankOpen(true)} monthLabel={MONTHS[now.getMonth()]} />
           )}
           {tab === "movimientos" && (<MovimientosScreen transactions={data.transactions} catById={catById} onDelete={deleteTransaction} />)}
-          
-          {/* Aquí pasamos ambas funciones de cálculo de deuda */}
           {tab === "tarjetas" && (<TarjetasScreen cards={data.cards} cardPendingDebt={cardPendingDebt} cardCurrentMonthDebt={cardCurrentMonthDebt} onAdd={() => setAddCardOpen(true)} onOpen={(c) => setCardDetail(c)} />)}
-          
           {tab === "resumenes" && (
             <ResumenesScreen mode={summaryMode} setMode={setSummaryMode} selMonth={selMonth} setSelMonth={setSelMonth} selYear={selYear} setSelYear={setSelYear} monthTotals={monthTotals} monthByCategory={monthByCategory} yearTotals={yearTotals} yearByCategory={yearByCategory} yearByMonth={yearByMonth} />
           )}
           {tab === "ajustes" && (<AjustesScreen bank={data.bank} onEditBank={() => setEditBankOpen(true)} categories={categories} onAddCategory={() => setAddCatOpen(true)} onDeleteCategory={deleteCategory} />)}
         </div>
 
+        {/* Botón Flotante y Barra fija */}
         {(tab === "inicio" || tab === "movimientos") && (
-          <button onClick={() => setAddTxOpen(true)} style={{ position: "absolute", right: 20, bottom: 96, width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(59,130,246,0.4)" }}>
+          <button onClick={() => setAddTxOpen(true)} style={{ position: "absolute", right: 20, bottom: 96, width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(59,130,246,0.4)", zIndex: 10 }}>
             <Icon name="plus" size={26} color="#fff" />
           </button>
         )}
@@ -374,7 +377,7 @@ function TabBar({ tab, setTab }) {
     { id: "ajustes", label: "Ajustes", icon: "settings" },
   ];
   return (
-    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)", zIndex: 10 }}>
       {items.map((it) => {
         const active = tab === it.id;
         return (
@@ -512,7 +515,7 @@ function MovimientosScreen({ transactions, catById, onDelete }) {
   );
 }
 
-/* ---------------------------------- Tarjetas (Actualizada) ---------------------------------- */
+/* ---------------------------------- Tarjetas ---------------------------------- */
 function TarjetasScreen({ cards, cardPendingDebt, cardCurrentMonthDebt, onAdd, onOpen }) {
   return (
     <div style={{ padding: "20px 20px 8px" }}>
