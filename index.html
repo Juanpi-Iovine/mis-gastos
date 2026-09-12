@@ -314,7 +314,7 @@ function GastosApp() {
   return (
     <div style={{ display: "flex", justifyContent: "center", background: "#DEDFDA", minHeight: "100vh", fontFamily: FONT }}>
       <div style={{ width: "100%", maxWidth: 430, background: BG, minHeight: "100vh", position: "relative", boxShadow: "0 0 40px rgba(0,0,0,0.12)" }}>
-        <div style={{ paddingBottom: 92 }}>
+       <div style={{ paddingBottom: 92, paddingTop: "env(safe-area-inset-top)" }}>
           {tab === "inicio" && (
             <InicioScreen bank={data.bank} totalCardDebt={totalCardDebt} monthTotals={monthTotals} monthByCategory={monthByCategory} recentTx={recentTx} catById={catById} cards={data.cards} onSeeAll={() => setTab("movimientos")} onEditBank={() => setEditBankOpen(true)} monthLabel={MONTHS[now.getMonth()]} />
           )}
