@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Mis Gastos</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #DEDFDA; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; }
+  input, select { font-size: 16px; } /* avoid iOS zoom on focus */
+  @keyframes slideUp { from { transform: translateY(24px); opacity: 0.6 } to { transform: translateY(0); opacity: 1 } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+/* ---------------------------------- design tokens ---------------------------------- */
+const INK = "#16241F";
+const MUTED = "#6E7B76";
+const BG = "#F4F5F1";
+const CARD = "#FFFFFF";
+const LINE = "#E7E9E3";
+const BRAND = "#1F5D50";
+const BRAND_SOFT = "#E4EFEC";
+const INCOME = "#2E9E75";
+const EXPENSE = "#C4522E";
+
+const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif";
+
+const DEFAULT_CATEGORIES = [
+  { id: "cat_super", name: "Supermercado", emoji: "🛒", color: "#3E8E7E" },
+  { id: "cat_comida", name: "Comida afuera", emoji: "🍔", color: "#C4522E" },
+  { id: "cat_transporte", name: "Transporte", emoji: "🚗", color: "#4C6EF5" },
+  { id: "cat_hogar", name: "Hogar", emoji: "🏠", color: "#A9784F" },
+  { id: "cat_salud", name: "Salud", emoji: "💊", color: "#D6336C" },
+  { id: "cat_ocio", name: "Ocio", emoji: "🎬", color: "#7048E8" },
+  { id: "cat_ropa", name: "Ropa", emoji: "👕", color: "#E8890C" },
+  { id: "cat_educacion", name: "Educación", emoji: "📚", color: "#1F5D50" },
+  { id: "cat_servicios", name: "Servicios", emoji: "💡", color: "#C9A227" },
+  { id: "cat_viajes", name: "Viajes", emoji: "✈️", color: "#1E90A8" },
+  { id: "cat_otros", name: "Otros", emoji: "📦", color: "#868E96" },
+  { id: "cat_ingreso", name: "Ingreso", emoji: "💰", color: "#2E9E75" },
+];
+
+const EMOJI_CHOICES = ["🛒","🍔","🚗","🏠","💊","🎬","👕","📚","💡","✈️","📦","💰","🐶","🎓","🎁","⚽","🍺","📱","🔧","💻"];
+const COLOR_CHOICES = ["#3E8E7E","#C4522E","#4C6EF5","#A9784F","#D6336C","#7048E8","#E8890C","#1F5D50","#C9A227","#1E90A8","#868E96","#2E9E75"];
+
+const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+/* ---------------------------------- helpers ---------------------------------- */
+function uid(prefix) {
+  return prefix + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+function todayISO() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+function fmtMoney(n) {
+  const v = Number(n) || 0;
+  const neg = v < 0;
+  const s = Math.abs(v).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (neg ? "-$" : "$") + s;
+}
+function fmtDate(iso) {
+  const d = new Date(iso + "T00:00:00");
+  return d.getDate() + " " + MONTHS_SHORT[d.getMonth()];
+}
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function buildInstallments({ purchaseDate, totalAmount, cuotas, cardId, categoryId, description }) {
+  const groupId = uid("grp");
+  const base = new Date(purchaseDate + "T00:00:00");
+  const per = round2(totalAmount / cuotas);
+  const list = [];
+  let assigned = 0;
+  for (let i = 0; i < cuotas; i++) {
+    const d = new Date(base.getFullYear(), base.getMonth() + i, 1);
+    const amount = i === cuotas - 1 ? round2(totalAmount - assigned) : per;
+    assigned = round2(assigned + amount);
+    list.push({
+      id: uid("tx"), kind: "gasto", accountType: "card", cardId, categoryId, description, amount,
+      date: d.toISOString().slice(0, 10), cuotaActual: i + 1, cuotaTotal: cuotas, groupId, purchaseDate,
+    });
+  }
+  return list;
+}
+
+function nextDayOccurrence(day, from) {
+  let d = new Date(from.getFullYear(), from.getMonth(), day);
+  if (d < new Date(from.getFullYear(), from.getMonth(), from.getDate())) {
+    d = new Date(from.getFullYear(), from.getMonth() + 1, day);
+  }
+  return d;
+}
+
+/* ---------------------------------- storage (localStorage) ---------------------------------- */
+const STORAGE_KEY = "gastos-app-data-v1";
+function emptyData() {
+  return { bank: { name: "Cuenta bancaria", balance: 0 }, cards: [], categories: DEFAULT_CATEGORIES, transactions: [] };
+}
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+function persist(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+}
+
+/* ---------------------------------- icons (inline svg, no dependencies) ---------------------------------- */
+function Icon({ name, size = 20, color = INK, strokeWidth = 1.8 }) {
+  const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth, strokeLinecap: "round", strokeLinejoin: "round" };
+  const map = {
+    home: <svg {...p}><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></svg>,
+    list: <svg {...p}><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>,
+    card: <svg {...p}><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>,
+    pie: <svg {...p}><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>,
+    settings: <svg {...p}><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill={color}/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="2" fill={color}/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2" fill={color}/></svg>,
+    plus: <svg {...p}><path d="M12 5v14"/><path d="M5 12h14"/></svg>,
+    x: <svg {...p}><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>,
+    trash: <svg {...p}><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>,
+    chevronLeft: <svg {...p}><path d="M15 18l-6-6 6-6"/></svg>,
+    chevronRight: <svg {...p}><path d="M9 18l6-6-6-6"/></svg>,
+    bank: <svg {...p}><path d="M3 10l9-6 9 6"/><path d="M4 10v9"/><path d="M9 10v9"/><path d="M15 10v9"/><path d="M20 10v9"/><path d="M2 21h20"/></svg>,
+    wallet: <svg {...p}><path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v3"/><path d="M3 7v10a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1h-5a2 2 0 1 0 0 4"/></svg>,
+    check: <svg {...p}><path d="M20 6 9 17l-5-5"/></svg>,
+    arrowUp: <svg {...p}><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>,
+    arrowDown: <svg {...p}><path d="M7 7l10 10"/><path d="M17 7v10H7"/></svg>,
+  };
+  return map[name] || null;
+}
+
+/* ---------------------------------- small UI atoms ---------------------------------- */
+function Sheet({ open, onClose, title, children }) {
+  if (!open) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(22,36,31,0.4)" }} />
+      <div style={{ position: "relative", width: "100%", maxWidth: 430, background: BG, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "88vh", overflowY: "auto", paddingBottom: "env(safe-area-inset-bottom)", animation: "slideUp 0.25s ease-out" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 8px" }}>
+          <span style={{ fontSize: 17, fontWeight: 600, color: INK }}>{title}</span>
+          <button onClick={onClose} style={{ background: LINE, borderRadius: 999, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", border: "none" }}>
+            <Icon name="x" size={16} color={INK} />
+          </button>
+        </div>
+        <div style={{ padding: "8px 20px 28px" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (<div style={{ marginBottom: 16 }}><div style={{ fontSize: 13, color: MUTED, marginBottom: 6 }}>{label}</div>{children}</div>);
+}
+
+const inputStyle = { width: "100%", boxSizing: "border-box", border: `1px solid ${LINE}`, borderRadius: 12, padding: "12px 14px", fontSize: 16, background: CARD, color: INK, outline: "none", fontFamily: FONT };
+
+function PrimaryButton({ children, onClick, disabled, color }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{ width: "100%", padding: "14px", borderRadius: 14, border: "none", background: disabled ? LINE : (color || BRAND), color: disabled ? MUTED : "#fff", fontSize: 16, fontWeight: 600, fontFamily: FONT }}>
+      {children}
+    </button>
+  );
+}
+
+function Segmented({ options, value, onChange }) {
+  return (
+    <div style={{ display: "flex", background: LINE, borderRadius: 12, padding: 3 }}>
+      {options.map((o) => (
+        <button key={o.value} onClick={() => onChange(o.value)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: value === o.value ? CARD : "transparent", fontWeight: 600, fontSize: 14, color: value === o.value ? INK : MUTED, boxShadow: value === o.value ? "0 1px 2px rgba(0,0,0,0.08)" : "none", fontFamily: FONT }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CategoryPicker({ categories, value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+      {categories.map((c) => (
+        <button key={c.id} onClick={() => onChange(c.id)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 4px", minWidth: 64, border: "none", background: "transparent" }}>
+          <div style={{ width: 46, height: 46, borderRadius: 23, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, background: value === c.id ? c.color : CARD, border: value === c.id ? `2px solid ${c.color}` : `1px solid ${LINE}` }}>{c.emoji}</div>
+          <span style={{ fontSize: 11, color: value === c.id ? INK : MUTED, textAlign: "center", fontWeight: value === c.id ? 600 : 400 }}>{c.name}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MiniBarChart({ data }) {
+  const max = Math.max(1, ...data.map((d) => d.gasto));
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 150, padding: "0 4px" }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, height: "100%", justifyContent: "flex-end" }}>
+          <div style={{ width: "100%", maxWidth: 18, height: Math.max(3, (d.gasto / max) * 110) + "px", background: EXPENSE, borderRadius: 4 }} />
+          <span style={{ fontSize: 9.5, color: MUTED }}>{d.month}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------------- main app ---------------------------------- */
+function GastosApp() {
+  const [data, setData] = useState(() => loadData() || emptyData());
+  const [tab, setTab] = useState("inicio");
+
+  const [addTxOpen, setAddTxOpen] = useState(false);
+  const [addCardOpen, setAddCardOpen] = useState(false);
+  const [addCatOpen, setAddCatOpen] = useState(false);
+  const [editBankOpen, setEditBankOpen] = useState(false);
+  const [cardDetail, setCardDetail] = useState(null);
+
+  const [summaryMode, setSummaryMode] = useState("mensual");
+  const now = new Date();
+  const [selMonth, setSelMonth] = useState(now.getMonth());
+  const [selYear, setSelYear] = useState(now.getFullYear());
+
+  useEffect(() => { persist(data); }, [data]);
+
+  const categories = data.categories;
+  const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
+
+  const monthTx = useMemo(() => data.transactions.filter((t) => {
+    const d = new Date(t.date + "T00:00:00");
+    return d.getFullYear() === selYear && d.getMonth() === selMonth;
+  }), [data.transactions, selYear, selMonth]);
+
+  const yearTx = useMemo(() => data.transactions.filter((t) => new Date(t.date + "T00:00:00").getFullYear() === selYear), [data.transactions, selYear]);
+
+  function totals(list) {
+    let income = 0, expense = 0;
+    list.forEach((t) => { if (t.kind === "ingreso") income += t.amount; else expense += t.amount; });
+    return { income: round2(income), expense: round2(expense) };
+  }
+  const monthTotals = totals(monthTx);
+  const yearTotals = totals(yearTx);
+
+  const monthByCategory = useMemo(() => {
+    const m = {};
+    monthTx.filter((t) => t.kind === "gasto").forEach((t) => { m[t.categoryId] = round2((m[t.categoryId] || 0) + t.amount); });
+    return Object.entries(m).map(([id, amount]) => ({ id, amount, cat: catById[id] })).sort((a, b) => b.amount - a.amount);
+  }, [monthTx, catById]);
+
+  const yearByCategory = useMemo(() => {
+    const m = {};
+    yearTx.filter((t) => t.kind === "gasto").forEach((t) => { m[t.categoryId] = round2((m[t.categoryId] || 0) + t.amount); });
+    return Object.entries(m).map(([id, amount]) => ({ id, amount, cat: catById[id] })).sort((a, b) => b.amount - a.amount);
+  }, [yearTx, catById]);
+
+  const yearByMonth = useMemo(() => {
+    const arr = Array.from({ length: 12 }, (_, i) => ({ month: MONTHS_SHORT[i], gasto: 0, ingreso: 0 }));
+    yearTx.forEach((t) => {
+      const m = new Date(t.date + "T00:00:00").getMonth();
+      if (t.kind === "gasto") arr[m].gasto = round2(arr[m].gasto + t.amount); else arr[m].ingreso = round2(arr[m].ingreso + t.amount);
+    });
+    return arr;
+  }, [yearTx]);
+
+  function cardPendingDebt(cardId) {
+    const todayM = new Date(now.getFullYear(), now.getMonth(), 1);
+    return round2(data.transactions.filter((t) => t.accountType === "card" && t.cardId === cardId).filter((t) => new Date(t.date + "T00:00:00") >= todayM).reduce((s, t) => s + t.amount, 0));
+  }
+  const totalCardDebt = round2(data.cards.reduce((s, c) => s + cardPendingDebt(c.id), 0));
+
+  function saveTransaction(tx) {
+    setData((d) => {
+      let bank = d.bank;
+      if (tx.entries[0] && tx.entries[0].accountType === "bank") {
+        const t = tx.entries[0];
+        const delta = t.kind === "ingreso" ? t.amount : -t.amount;
+        bank = { ...d.bank, balance: round2(d.bank.balance + delta) };
+      }
+      return { ...d, bank, transactions: [...d.transactions, ...tx.entries] };
+    });
+  }
+  function deleteTransaction(tx) {
+    setData((d) => {
+      const toRemove = tx.groupId ? d.transactions.filter((t) => t.groupId === tx.groupId) : [tx];
+      const ids = new Set(toRemove.map((t) => t.id));
+      let bank = d.bank;
+      toRemove.forEach((t) => { if (t.accountType === "bank") { const delta = t.kind === "ingreso" ? -t.amount : t.amount; bank = { ...bank, balance: round2(bank.balance + delta) }; } });
+      return { ...d, bank, transactions: d.transactions.filter((t) => !ids.has(t.id)) };
+    });
+  }
+  function addCard(card) { setData((d) => ({ ...d, cards: [...d.cards, { ...card, id: uid("card") }] })); }
+  function deleteCard(cardId) { setData((d) => ({ ...d, cards: d.cards.filter((c) => c.id !== cardId), transactions: d.transactions.filter((t) => t.cardId !== cardId) })); }
+  function addCategory(cat) { setData((d) => ({ ...d, categories: [...d.categories, { ...cat, id: uid("cat") }] })); }
+  function deleteCategory(id) { setData((d) => ({ ...d, categories: d.categories.filter((c) => c.id !== id) })); }
+  function setBank(bank) { setData((d) => ({ ...d, bank })); }
+
+  const recentTx = useMemo(() => [...data.transactions].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 6), [data.transactions]);
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", background: "#DEDFDA", minHeight: "100vh", fontFamily: FONT }}>
+      <div style={{ width: "100%", maxWidth: 430, background: BG, minHeight: "100vh", position: "relative", boxShadow: "0 0 40px rgba(0,0,0,0.12)" }}>
+        <div style={{ paddingBottom: 92 }}>
+          {tab === "inicio" && (
+            <InicioScreen bank={data.bank} totalCardDebt={totalCardDebt} monthTotals={monthTotals} monthByCategory={monthByCategory} recentTx={recentTx} catById={catById} cards={data.cards} onSeeAll={() => setTab("movimientos")} onEditBank={() => setEditBankOpen(true)} monthLabel={MONTHS[now.getMonth()]} />
+          )}
+          {tab === "movimientos" && (<MovimientosScreen transactions={data.transactions} catById={catById} onDelete={deleteTransaction} />)}
+          {tab === "tarjetas" && (<TarjetasScreen cards={data.cards} cardPendingDebt={cardPendingDebt} onAdd={() => setAddCardOpen(true)} onOpen={(c) => setCardDetail(c)} />)}
+          {tab === "resumenes" && (
+            <ResumenesScreen mode={summaryMode} setMode={setSummaryMode} selMonth={selMonth} setSelMonth={setSelMonth} selYear={selYear} setSelYear={setSelYear} monthTotals={monthTotals} monthByCategory={monthByCategory} yearTotals={yearTotals} yearByCategory={yearByCategory} yearByMonth={yearByMonth} />
+          )}
+          {tab === "ajustes" && (<AjustesScreen bank={data.bank} onEditBank={() => setEditBankOpen(true)} categories={categories} onAddCategory={() => setAddCatOpen(true)} onDeleteCategory={deleteCategory} />)}
+        </div>
+
+        {(tab === "inicio" || tab === "movimientos") && (
+          <button onClick={() => setAddTxOpen(true)} style={{ position: "absolute", right: 20, bottom: 96, width: 56, height: 56, borderRadius: 28, background: BRAND, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(31,93,80,0.35)" }}>
+            <Icon name="plus" size={26} color="#fff" />
+          </button>
+        )}
+
+        <TabBar tab={tab} setTab={setTab} />
+
+        <AddTransactionSheet open={addTxOpen} onClose={() => setAddTxOpen(false)} categories={categories} cards={data.cards} onSave={(payload) => { saveTransaction(payload); setAddTxOpen(false); }} />
+        <AddCardSheet open={addCardOpen} onClose={() => setAddCardOpen(false)} onSave={(c) => { addCard(c); setAddCardOpen(false); }} />
+        <AddCategorySheet open={addCatOpen} onClose={() => setAddCatOpen(false)} onSave={(c) => { addCategory(c); setAddCatOpen(false); }} />
+        <EditBankSheet open={editBankOpen} onClose={() => setEditBankOpen(false)} bank={data.bank} onSave={(b) => { setBank(b); setEditBankOpen(false); }} />
+        <CardDetailSheet card={cardDetail} onClose={() => setCardDetail(null)} transactions={data.transactions} catById={catById} onDelete={deleteTransaction} onDeleteCard={(id) => { deleteCard(id); setCardDetail(null); }} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------- tab bar ---------------------------------- */
+function TabBar({ tab, setTab }) {
+  const items = [
+    { id: "inicio", label: "Inicio", icon: "home" },
+    { id: "movimientos", label: "Movim.", icon: "list" },
+    { id: "tarjetas", label: "Tarjetas", icon: "card" },
+    { id: "resumenes", label: "Resúmenes", icon: "pie" },
+    { id: "ajustes", label: "Ajustes", icon: "settings" },
+  ];
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(244,245,241,0.94)", backdropFilter: "blur(10px)", borderTop: `1px solid ${LINE}`, display: "flex", paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {items.map((it) => {
+        const active = tab === it.id;
+        return (
+          <button key={it.id} onClick={() => setTab(it.id)} style={{ flex: 1, border: "none", background: "transparent", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "10px 0 8px" }}>
+            <Icon name={it.icon} size={22} color={active ? BRAND : MUTED} strokeWidth={active ? 2.3 : 1.8} />
+            <span style={{ fontSize: 10.5, color: active ? BRAND : MUTED, fontWeight: active ? 600 : 400, fontFamily: FONT }}>{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------------------------- Inicio ---------------------------------- */
+function InicioScreen({ bank, totalCardDebt, monthTotals, monthByCategory, recentTx, catById, cards, onSeeAll, onEditBank, monthLabel }) {
+  const net = round2(monthTotals.income - monthTotals.expense);
+  return (
+    <div style={{ padding: "20px 20px 8px" }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginBottom: 2 }}>Tus finanzas</div>
+      <div style={{ fontSize: 14, color: MUTED, marginBottom: 18 }}>{monthLabel}</div>
+
+      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+        <div onClick={onEditBank} style={{ flex: 1, background: BRAND, borderRadius: 18, padding: "16px 16px", color: "#fff", cursor: "pointer" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.85, fontSize: 12.5, marginBottom: 8 }}><Icon name="bank" size={14} color="#fff" /> {bank.name}</div>
+          <div style={{ fontSize: 21, fontWeight: 700 }}>{fmtMoney(bank.balance)}</div>
+        </div>
+        <div style={{ flex: 1, background: CARD, borderRadius: 18, padding: "16px 16px", border: `1px solid ${LINE}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: MUTED, fontSize: 12.5, marginBottom: 8 }}><Icon name="card" size={14} color={MUTED} /> Tarjetas ({cards.length})</div>
+          <div style={{ fontSize: 21, fontWeight: 700, color: EXPENSE }}>{fmtMoney(totalCardDebt)}</div>
+          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>deuda pendiente</div>
+        </div>
+      </div>
+
+      <div style={{ background: CARD, borderRadius: 18, padding: 18, border: `1px solid ${LINE}`, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: INK }}>Gasto de este mes</span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: EXPENSE }}>{fmtMoney(monthTotals.expense)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: MUTED, marginBottom: 14 }}>
+          <span>Ingresos: <b style={{ color: INCOME }}>{fmtMoney(monthTotals.income)}</b></span>
+          <span>Balance: <b style={{ color: net >= 0 ? INCOME : EXPENSE }}>{fmtMoney(net)}</b></span>
+        </div>
+        {monthByCategory.length === 0 ? (
+          <div style={{ fontSize: 13, color: MUTED }}>Todavía no cargaste gastos este mes.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {monthByCategory.slice(0, 4).map((c) => {
+              const pct = monthTotals.expense ? Math.round((c.amount / monthTotals.expense) * 100) : 0;
+              return (
+                <div key={c.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                    <span style={{ color: INK }}>{c.cat?.emoji} {c.cat?.name || "Otros"}</span>
+                    <span style={{ color: MUTED }}>{fmtMoney(c.amount)}</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 4, background: LINE }}><div style={{ height: 6, borderRadius: 4, width: pct + "%", background: c.cat?.color || MUTED }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: INK }}>Últimos movimientos</span>
+        <button onClick={onSeeAll} style={{ border: "none", background: "transparent", color: BRAND, fontSize: 13, fontWeight: 600 }}>Ver todos</button>
+      </div>
+      {recentTx.length === 0 ? (
+        <EmptyState text="Todavía no hay movimientos cargados. Tocá + para agregar el primero." />
+      ) : (
+        <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, overflow: "hidden" }}>
+          {recentTx.map((t, i) => <TxRow key={t.id} t={t} cat={catById[t.categoryId]} last={i === recentTx.length - 1} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return (<div style={{ background: CARD, borderRadius: 18, border: `1px dashed ${LINE}`, padding: "26px 18px", textAlign: "center", color: MUTED, fontSize: 13.5 }}>{text}</div>);
+}
+
+function TxRow({ t, cat, last, onDelete }) {
+  const isIncome = t.kind === "ingreso";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: last ? "none" : `1px solid ${LINE}` }}>
+      <div style={{ width: 38, height: 38, borderRadius: 19, background: (cat?.color || MUTED) + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>{cat?.emoji || "📦"}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14.5, color: INK, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description || cat?.name || "Movimiento"}</div>
+        <div style={{ fontSize: 12, color: MUTED }}>{fmtDate(t.date)}{t.accountType === "card" ? ` · Tarjeta` : " · Cuenta"}{t.cuotaTotal ? ` · Cuota ${t.cuotaActual}/${t.cuotaTotal}` : ""}</div>
+      </div>
+      <div style={{ fontSize: 14.5, fontWeight: 600, color: isIncome ? INCOME : INK, flexShrink: 0 }}>{isIncome ? "+" : "-"}{fmtMoney(t.amount)}</div>
+      {onDelete && (<button onClick={() => onDelete(t)} style={{ border: "none", background: "transparent", padding: 4, marginLeft: 2 }}><Icon name="trash" size={16} color={MUTED} /></button>)}
+    </div>
+  );
+}
+
+/* ---------------------------------- Movimientos ---------------------------------- */
+function MovimientosScreen({ transactions, catById, onDelete }) {
+  const [filter, setFilter] = useState("todos");
+  const filtered = useMemo(() => {
+    let list = [...transactions];
+    if (filter === "bank") list = list.filter((t) => t.accountType === "bank");
+    if (filter === "card") list = list.filter((t) => t.accountType === "card");
+    return list.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [transactions, filter]);
+
+  const groups = useMemo(() => {
+    const m = {};
+    filtered.forEach((t) => {
+      const d = new Date(t.date + "T00:00:00");
+      const key = MONTHS[d.getMonth()] + " " + d.getFullYear();
+      m[key] = m[key] || [];
+      m[key].push(t);
+    });
+    return Object.entries(m);
+  }, [filtered]);
+
+  return (
+    <div style={{ padding: "20px 20px 8px" }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginBottom: 14 }}>Movimientos</div>
+      <div style={{ marginBottom: 16 }}>
+        <Segmented options={[{ value: "todos", label: "Todos" }, { value: "bank", label: "Cuenta" }, { value: "card", label: "Tarjeta" }]} value={filter} onChange={setFilter} />
+      </div>
+      {groups.length === 0 ? (<EmptyState text="No hay movimientos para mostrar todavía." />) : (
+        groups.map(([label, list]) => (
+          <div key={label} style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 13, color: MUTED, fontWeight: 600, marginBottom: 8 }}>{label}</div>
+            <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, overflow: "hidden" }}>
+              {list.map((t, i) => <TxRow key={t.id} t={t} cat={catById[t.categoryId]} last={i === list.length - 1} onDelete={onDelete} />)}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------- Tarjetas ---------------------------------- */
+function TarjetasScreen({ cards, cardPendingDebt, onAdd, onOpen }) {
+  return (
+    <div style={{ padding: "20px 20px 8px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, color: INK }}>Tarjetas</span>
+        <button onClick={onAdd} style={{ border: "none", background: BRAND_SOFT, color: BRAND, borderRadius: 12, padding: "8px 14px", fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}><Icon name="plus" size={15} color={BRAND} /> Agregar</button>
+      </div>
+      {cards.length === 0 ? (<EmptyState text="Agregá tu primera tarjeta de crédito para poder cargar compras en cuotas." />) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {cards.map((c) => {
+            const nextClosing = nextDayOccurrence(c.closingDay, new Date());
+            const nextDue = nextDayOccurrence(c.dueDay, new Date());
+            const debt = cardPendingDebt(c.id);
+            return (
+              <div key={c.id} onClick={() => onOpen(c)} style={{ background: "linear-gradient(135deg, #22403A, #16241F)", borderRadius: 20, padding: 18, color: "#fff", cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontSize: 15.5, fontWeight: 600 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>Cierra el {c.closingDay} · Vence el {c.dueDay}</div>
+                  </div>
+                  <Icon name="wallet" size={20} color="rgba(255,255,255,0.7)" />
+                </div>
+                <div style={{ marginTop: 18, fontSize: 22, fontWeight: 700 }}>{fmtMoney(debt)}</div>
+                <div style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2 }}>Próximo cierre {nextClosing.getDate()} {MONTHS_SHORT[nextClosing.getMonth()]} · Próximo vencimiento {nextDue.getDate()} {MONTHS_SHORT[nextDue.getMonth()]}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardDetailSheet({ card, onClose, transactions, catById, onDelete, onDeleteCard }) {
+  if (!card) return null;
+  const related = transactions.filter((t) => t.cardId === card.id).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const groups = {};
+  related.forEach((t) => { const key = t.groupId || t.id; groups[key] = groups[key] || []; groups[key].push(t); });
+  return (
+    <Sheet open={!!card} onClose={onClose} title={card.name}>
+      <div style={{ fontSize: 13, color: MUTED, marginBottom: 16 }}>Cierra el día {card.closingDay} de cada mes · Vence el día {card.dueDay}</div>
+      {Object.keys(groups).length === 0 ? (<EmptyState text="Todavía no cargaste compras con esta tarjeta." />) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+          {Object.values(groups).map((list) => {
+            const first = list[0];
+            const cat = catById[first.categoryId];
+            const total = round2(list.reduce((s, t) => s + t.amount, 0));
+            return (
+              <div key={first.groupId || first.id} style={{ background: CARD, borderRadius: 16, border: `1px solid ${LINE}`, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ fontSize: 18 }}>{cat?.emoji}</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: INK }}>{first.description || cat?.name}</div>
+                      <div style={{ fontSize: 12, color: MUTED }}>{first.cuotaTotal ? `${first.cuotaTotal} cuotas de ${fmtMoney(first.amount)}` : "Pago único"} · total {fmtMoney(total)}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => onDelete(first)} style={{ border: "none", background: "transparent" }}><Icon name="trash" size={16} color={MUTED} /></button>
+                </div>
+                {first.cuotaTotal && (
+                  <div style={{ display: "flex", gap: 4, marginTop: 10, flexWrap: "wrap" }}>
+                    {list.map((c) => {
+                      const past = new Date(c.date + "T00:00:00") < new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+                      return (<span key={c.id} style={{ fontSize: 10.5, padding: "3px 7px", borderRadius: 8, background: past ? LINE : BRAND_SOFT, color: past ? MUTED : BRAND, fontWeight: 600 }}>{c.cuotaActual}/{c.cuotaTotal}</span>);
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <button onClick={() => onDeleteCard(card.id)} style={{ width: "100%", border: "none", background: "transparent", color: EXPENSE, fontSize: 14, fontWeight: 600, padding: "8px 0" }}>Eliminar tarjeta</button>
+    </Sheet>
+  );
+}
+
+/* ---------------------------------- Resúmenes ---------------------------------- */
+function ResumenesScreen({ mode, setMode, selMonth, setSelMonth, selYear, setSelYear, monthTotals, monthByCategory, yearTotals, yearByCategory, yearByMonth }) {
+  function prevMonth() { if (selMonth === 0) { setSelMonth(11); setSelYear(selYear - 1); } else setSelMonth(selMonth - 1); }
+  function nextMonth() { if (selMonth === 11) { setSelMonth(0); setSelYear(selYear + 1); } else setSelMonth(selMonth + 1); }
+  const netMonth = round2(monthTotals.income - monthTotals.expense);
+  const netYear = round2(yearTotals.income - yearTotals.expense);
+  const navBtn = { border: "none", background: CARD, borderRadius: 10, width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center" };
+
+  return (
+    <div style={{ padding: "20px 20px 8px" }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginBottom: 14 }}>Resúmenes</div>
+      <div style={{ marginBottom: 18 }}><Segmented options={[{ value: "mensual", label: "Mensual" }, { value: "anual", label: "Anual" }]} value={mode} onChange={setMode} /></div>
+
+      {mode === "mensual" ? (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <button onClick={prevMonth} style={navBtn}><Icon name="chevronLeft" size={18} color={INK} /></button>
+            <span style={{ fontSize: 15.5, fontWeight: 600, color: INK }}>{MONTHS[selMonth]} {selYear}</span>
+            <button onClick={nextMonth} style={navBtn}><Icon name="chevronRight" size={18} color={INK} /></button>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+            <StatPill label="Ingresos" value={monthTotals.income} color={INCOME} iconName="arrowUp" />
+            <StatPill label="Gastos" value={monthTotals.expense} color={EXPENSE} iconName="arrowDown" />
+          </div>
+          <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, padding: 16, marginBottom: 18, textAlign: "center" }}>
+            <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 4 }}>Balance del mes</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: netMonth >= 0 ? INCOME : EXPENSE }}>{fmtMoney(netMonth)}</div>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: INK, marginBottom: 10 }}>Por categoría</div>
+          {monthByCategory.length === 0 ? (<EmptyState text="No hay gastos cargados en este mes." />) : (
+            <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, padding: "6px 16px" }}>
+              {monthByCategory.map((c, i) => <CategoryRow key={c.id} c={c} total={monthTotals.expense} last={i === monthByCategory.length - 1} />)}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <button onClick={() => setSelYear(selYear - 1)} style={navBtn}><Icon name="chevronLeft" size={18} color={INK} /></button>
+            <span style={{ fontSize: 15.5, fontWeight: 600, color: INK }}>{selYear}</span>
+            <button onClick={() => setSelYear(selYear + 1)} style={navBtn}><Icon name="chevronRight" size={18} color={INK} /></button>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+            <StatPill label="Ingresos" value={yearTotals.income} color={INCOME} iconName="arrowUp" />
+            <StatPill label="Gastos" value={yearTotals.expense} color={EXPENSE} iconName="arrowDown" />
+          </div>
+          <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, padding: 16, marginBottom: 18, textAlign: "center" }}>
+            <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 4 }}>Balance del año</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: netYear >= 0 ? INCOME : EXPENSE }}>{fmtMoney(netYear)}</div>
+          </div>
+          <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, padding: "16px 8px 10px", marginBottom: 18 }}>
+            <div style={{ fontSize: 13, color: MUTED, marginBottom: 6, paddingLeft: 8 }}>Gasto por mes</div>
+            <MiniBarChart data={yearByMonth} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: INK, marginBottom: 10 }}>Por categoría</div>
+          {yearByCategory.length === 0 ? (<EmptyState text="No hay gastos cargados en este año." />) : (
+            <div style={{ background: CARD, borderRadius: 18, border: `1px solid ${LINE}`, padding: "6px 16px" }}>
+              {yearByCategory.map((c, i) => <CategoryRow key={c.id} c={c} total={yearTotals.expense} last={i === yearByCategory.length - 1} />)}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatPill({ label, value, color, iconName }) {
+  return (
+    <div style={{ flex: 1, background: CARD, borderRadius: 16, border: `1px solid ${LINE}`, padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: MUTED, marginBottom: 6 }}><Icon name={iconName} size={13} color={color} /> {label}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: INK }}>{fmtMoney(value)}</div>
+    </div>
+  );
+}
+
+function CategoryRow({ c, total, last }) {
+  const pct = total ? Math.round((c.amount / total) * 100) : 0;
+  return (
+    <div style={{ padding: "12px 0", borderBottom: last ? "none" : `1px solid ${LINE}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, marginBottom: 6 }}>
+        <span style={{ color: INK }}>{c.cat?.emoji} {c.cat?.name || "Otros"}</span>
+        <span style={{ color: MUTED }}>{fmtMoney(c.amount)} · {pct}%</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 4, background: LINE }}><div style={{ height: 6, borderRadius: 4, width: pct + "%", background: c.cat?.color || MUTED }} /></div>
+    </div>
+  );
+}
+
+/* ---------------------------------- Ajustes ---------------------------------- */
+function AjustesScreen({ bank, onEditBank, categories, onAddCategory, onDeleteCategory }) {
+  return (
+    <div style={{ padding: "20px 20px 8px" }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginBottom: 18 }}>Ajustes</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: INK, marginBottom: 10 }}>Cuenta bancaria</div>
+      <div onClick={onEditBank} style={{ background: CARD, borderRadius: 16, border: `1px solid ${LINE}`, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22, cursor: "pointer" }}>
+        <div><div style={{ fontSize: 14, fontWeight: 500, color: INK }}>{bank.name}</div><div style={{ fontSize: 12, color: MUTED }}>Saldo: {fmtMoney(bank.balance)}</div></div>
+        <span style={{ fontSize: 13, color: BRAND, fontWeight: 600 }}>Editar</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: INK }}>Categorías</span>
+        <button onClick={onAddCategory} style={{ border: "none", background: BRAND_SOFT, color: BRAND, borderRadius: 10, padding: "6px 12px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><Icon name="plus" size={13} color={BRAND} /> Nueva</button>
+      </div>
+      <div style={{ background: CARD, borderRadius: 16, border: `1px solid ${LINE}`, padding: "4px 14px" }}>
+        {categories.map((c, i) => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i === categories.length - 1 ? "none" : `1px solid ${LINE}` }}>
+            <div style={{ width: 32, height: 32, borderRadius: 16, background: c.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>{c.emoji}</div>
+            <span style={{ flex: 1, fontSize: 14, color: INK }}>{c.name}</span>
+            <button onClick={() => onDeleteCategory(c.id)} style={{ border: "none", background: "transparent" }}><Icon name="trash" size={15} color={MUTED} /></button>
+          </div>
+        ))}
+      </div>
+      <div style={{ textAlign: "center", fontSize: 11.5, color: MUTED, marginTop: 26 }}>Tus datos se guardan solo en este teléfono (localStorage del navegador).</div>
+    </div>
+  );
+}
+
+/* ---------------------------------- Add transaction sheet ---------------------------------- */
+function AddTransactionSheet({ open, onClose, categories, cards, onSave }) {
+  const [accountType, setAccountType] = useState("bank");
+  const [kind, setKind] = useState("gasto");
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [categoryId, setCategoryId] = useState(categories[0]?.id);
+  const [date, setDate] = useState(todayISO());
+  const [cardId, setCardId] = useState(cards[0]?.id || "");
+  const [cuotas, setCuotas] = useState(1);
+
+  useEffect(() => {
+    if (open) {
+      setAccountType("bank"); setKind("gasto"); setAmount(""); setDescription("");
+      setCategoryId(categories[0]?.id); setDate(todayISO()); setCardId(cards[0]?.id || ""); setCuotas(1);
+    }
+  }, [open]);
+
+  const amt = parseFloat(String(amount).replace(",", "."));
+  const valid = amt > 0 && categoryId && (accountType === "bank" || cardId);
+  const perCuota = accountType === "card" && amt > 0 ? round2(amt / cuotas) : 0;
+
+  function handleSave() {
+    if (!valid) return;
+    if (accountType === "bank") {
+      onSave({ entries: [{ id: uid("tx"), kind, accountType: "bank", categoryId, description, amount: round2(amt), date }] });
+    } else {
+      const entries = buildInstallments({ purchaseDate: date, totalAmount: round2(amt), cuotas, cardId, categoryId, description });
+      onSave({ entries });
+    }
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Nuevo movimiento">
+      <Field label="Cuenta"><Segmented options={[{ value: "bank", label: "Cuenta bancaria" }, { value: "card", label: "Tarjeta de crédito" }]} value={accountType} onChange={setAccountType} /></Field>
+      {accountType === "bank" && (<Field label="Tipo"><Segmented options={[{ value: "gasto", label: "Gasto" }, { value: "ingreso", label: "Ingreso" }]} value={kind} onChange={setKind} /></Field>)}
+      {accountType === "card" && (
+        cards.length === 0 ? (<div style={{ fontSize: 13, color: MUTED, marginBottom: 16 }}>Todavía no agregaste ninguna tarjeta. Andá a la pestaña Tarjetas para crear una.</div>) : (
+          <Field label="Tarjeta"><select value={cardId} onChange={(e) => setCardId(e.target.value)} style={inputStyle}>{cards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+        )
+      )}
+      <Field label="Monto"><input inputMode="decimal" style={inputStyle} placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+      <Field label="Descripción (opcional)"><input style={inputStyle} placeholder="Ej: Supermercado Coto" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+      <Field label="Fecha"><input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      {accountType === "card" && (
+        <Field label={`Cuotas: ${cuotas}`}>
+          <input type="range" min={1} max={24} value={cuotas} onChange={(e) => setCuotas(parseInt(e.target.value))} style={{ width: "100%" }} />
+          {amt > 0 && (<div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>{cuotas === 1 ? "Pago único" : `${cuotas} cuotas de ${fmtMoney(perCuota)}`}</div>)}
+        </Field>
+      )}
+      <Field label="Categoría"><CategoryPicker categories={categories} value={categoryId} onChange={setCategoryId} /></Field>
+      <PrimaryButton onClick={handleSave} disabled={!valid}>Guardar</PrimaryButton>
+    </Sheet>
+  );
+}
+
+/* ---------------------------------- Add card sheet ---------------------------------- */
+function AddCardSheet({ open, onClose, onSave }) {
+  const [name, setName] = useState("");
+  const [closingDay, setClosingDay] = useState("");
+  const [dueDay, setDueDay] = useState("");
+  useEffect(() => { if (open) { setName(""); setClosingDay(""); setDueDay(""); } }, [open]);
+  const valid = name.trim() && +closingDay >= 1 && +closingDay <= 31 && +dueDay >= 1 && +dueDay <= 31;
+  return (
+    <Sheet open={open} onClose={onClose} title="Nueva tarjeta">
+      <Field label="Nombre"><input style={inputStyle} placeholder="Ej: Visa Santander" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Día de cierre"><input type="number" min={1} max={31} style={inputStyle} placeholder="Ej: 25" value={closingDay} onChange={(e) => setClosingDay(e.target.value)} /></Field>
+      <Field label="Día de vencimiento"><input type="number" min={1} max={31} style={inputStyle} placeholder="Ej: 5" value={dueDay} onChange={(e) => setDueDay(e.target.value)} /></Field>
+      <PrimaryButton disabled={!valid} onClick={() => onSave({ name: name.trim(), closingDay: +closingDay, dueDay: +dueDay })}>Guardar tarjeta</PrimaryButton>
+    </Sheet>
+  );
+}
+
+/* ---------------------------------- Add category sheet ---------------------------------- */
+function AddCategorySheet({ open, onClose, onSave }) {
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState(EMOJI_CHOICES[0]);
+  const [color, setColor] = useState(COLOR_CHOICES[0]);
+  useEffect(() => { if (open) { setName(""); setEmoji(EMOJI_CHOICES[0]); setColor(COLOR_CHOICES[0]); } }, [open]);
+  return (
+    <Sheet open={open} onClose={onClose} title="Nueva categoría">
+      <Field label="Nombre"><input style={inputStyle} placeholder="Ej: Mascotas" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Ícono"><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{EMOJI_CHOICES.map((em) => (<button key={em} onClick={() => setEmoji(em)} style={{ width: 40, height: 40, borderRadius: 10, fontSize: 18, border: em === emoji ? `2px solid ${BRAND}` : `1px solid ${LINE}`, background: CARD }}>{em}</button>))}</div></Field>
+      <Field label="Color"><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{COLOR_CHOICES.map((c) => (<button key={c} onClick={() => setColor(c)} style={{ width: 30, height: 30, borderRadius: 15, background: c, border: "none", boxShadow: c === color ? `0 0 0 2px ${INK}` : "none" }} />))}</div></Field>
+      <PrimaryButton disabled={!name.trim()} onClick={() => onSave({ name: name.trim(), emoji, color })}>Guardar categoría</PrimaryButton>
+    </Sheet>
+  );
+}
+
+/* ---------------------------------- Edit bank sheet ---------------------------------- */
+function EditBankSheet({ open, onClose, bank, onSave }) {
+  const [name, setName] = useState(bank.name);
+  const [balance, setBalance] = useState(String(bank.balance));
+  useEffect(() => { if (open) { setName(bank.name); setBalance(String(bank.balance)); } }, [open, bank]);
+  return (
+    <Sheet open={open} onClose={onClose} title="Cuenta bancaria">
+      <Field label="Nombre"><input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Saldo actual"><input inputMode="decimal" style={inputStyle} value={balance} onChange={(e) => setBalance(e.target.value)} /></Field>
+      <PrimaryButton onClick={() => onSave({ name: name.trim() || "Cuenta bancaria", balance: round2(parseFloat(String(balance).replace(",", ".")) || 0) })}>
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Icon name="check" size={16} color="#fff" /> Guardar</span>
+      </PrimaryButton>
+    </Sheet>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<GastosApp />);
+</script>
+</body>
+</html>
